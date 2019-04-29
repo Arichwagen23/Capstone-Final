@@ -1,0 +1,130 @@
+setwd("C:/Users/tabit/OneDrive/Documents/Documents/RaulDataScience/Capstone/en_US")
+##setwd("\\\\FS1\\ProfilesRedirect\\T61J7EG\\Desktop\\Coursera Certificates\\Capstone\\en_US")
+library(quanteda)
+library(tm)
+library(stringi)
+library(stringr)
+library(tidyverse)
+library(LaF)
+library(ngram)
+library(tidyr)
+library(dplyr)
+library(plotly)
+
+######################################
+
+trigram.table <- read.table("trigrams.csv")
+bigram.table <- read.table("bigrams.csv")
+unigram.table <- read.table("unigrams.csv")
+
+
+
+### Collect Input Phrase
+input <- "for the love of all that is holy" ## All Lowercase only
+input.truncated <- str_split(input, " ",simplify = TRUE)
+EndWord <- length(input.truncated)
+StartWord <- EndWord-2
+lastThreeInput <- input.truncated[StartWord:EndWord]
+
+
+### Modified (i.e. mostly made up) Katz Backoff Model
+alpha <- 0.5
+##kappa <- 0 ignored given that it is set to 0
+discount <- 0.8
+
+
+
+trigram.estimates <- trigram.table %>% 
+  filter(
+    word1 == input.truncated[1,1] & 
+      word2 == input.truncated[1,2] &
+      word3 == input.truncated[1,3])
+
+bigram.estimates <- bigram.table %>%
+  filter(
+    word2 == input.truncated[1,2] & 
+      word3 == input.truncated[1,3])
+
+unigram.estimates <- unigram.table %>%
+  filter(word3 == input.truncated[1,3])
+
+
+trigram.estimates$TruePercent <- discount*trigram.estimates$percent
+bigram.estimates$TruePercent <- discount*alpha*bigram.estimates$percent
+unigram.estimates$TruePercent <- discount*alpha^2*unigram.estimates$percent
+
+
+FullEstimate <-  bind_rows(trigram.estimates,bigram.estimates,unigram.estimates) %>%
+  group_by(word4) %>%
+  summarise(FullPercent = sum(TruePercent)) %>%
+  arrange(desc(FullPercent))
+  
+
+trigram.estimates
+bigram.estimates
+unigram.estimates
+
+FullEstimate[1:3,1]
+
+##MAD LIBS
+
+
+
+NextWordEstimate <- function(inputText) {
+  input.truncated <- str_split(inputText, " ",simplify = TRUE)
+  EndWord <- length(input.truncated)
+  StartWord <- EndWord - 2
+  lastThreeInput <- input.truncated[StartWord:EndWord]
+  
+  
+  ### Modified (i.e. mostly made up) Katz Backoff Model
+  alpha <- 0.5
+  ##kappa <- 0 ignored given that it is set to 0
+  discount <- 0.8
+  
+  trigram.table <- read.table("trigrams.csv")
+  bigram.table <- read.table("bigrams.csv")
+  unigram.table <- read.table("unigrams.csv")
+  
+  trigram.estimates <- trigram.table %>% 
+    filter(
+      word1 == input.truncated[1,1] & 
+        word2 == input.truncated[1,2] &
+        word3 == input.truncated[1,3])
+  
+  bigram.estimates <- bigram.table %>%
+    filter(
+      word2 == input.truncated[1,2] & 
+        word3 == input.truncated[1,3])
+  
+  unigram.estimates <- unigram.table %>%
+    filter(word3 == input.truncated[1,3])
+  
+  
+  trigram.estimates$TruePercent <- discount*trigram.estimates$percent
+  bigram.estimates$TruePercent <- discount*alpha*bigram.estimates$percent
+  unigram.estimates$TruePercent <- discount*alpha^2*unigram.estimates$percent
+  
+  
+  FullEstimate <-  bind_rows(trigram.estimates,bigram.estimates,unigram.estimates) %>%
+    group_by(word4) %>%
+    summarise(FullPercent = sum(TruePercent)) %>%
+    arrange(desc(FullPercent))
+  
+  
+  trigram.estimates
+  bigram.estimates
+  unigram.estimates
+  
+  wordIndex <- sample(1:3,1)
+  return(FullEstimate[wordIndex,1])
+}
+
+
+output <- "for the love of all that is holy" ## All Lowercase only
+
+for (i in 1:10) {
+  output <- paste(output, NextWordEstimate(output), sep = " ")
+  output
+}
+
