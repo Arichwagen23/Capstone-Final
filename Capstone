@@ -1,0 +1,178 @@
+setwd("M:/R")
+install.packages("NLP")
+install.packages("tm")
+install.packages("fpc")
+install.packages("wordcloud")
+install.packages("quanteda")
+install.packages("RWeka")
+install.packages("knitr")
+install.packages("formattable")
+install.packages("plotly")
+install.packages("stringr")
+install.packages("tidyverse")
+install.packages("LaP")
+install.packages("ngram")
+install.packages("tidyr")
+
+library(NLP)
+library(tm)
+library(fpc)
+library(RColorBrewer)
+library(wordcloud)
+library(ggplot2)
+library(quanteda)
+library(RWeka)
+library(stringi)
+library(stringr)
+library(tidyverse)
+library(ngram)
+library(formattable)
+library(plotly)
+library(tidyr)
+library(dplyr)
+
+Sample.Percentage <-  0.10 #1% of raw files will be used
+
+########## Read and Subset Datasets (Twitter, Blogs, News)   #####################
+
+
+con.twitter <- file("en_US.twitter.txt", open = "rb")
+twitter <- readLines("en_US.twitter.txt", encoding = "UTF-8", skipNul = TRUE)
+nlines.twitter <- length(twitter)  ##number of lines 
+set.seed(1234) ## For reproducibility  #Random sampling
+selection.twitter <- as.logical(rbinom(nlines.twitter, 1, Sample.Percentage)) ##Subsection with % of population
+twitter.subset <- twitter[selection.twitter] #additional subset
+rm(twitter,selection.twitter, con.twitter,nlines.twitter)
+
+con.news <- file("en_US.news.txt", open = "rb")
+news <- readLines("en_US.news.txt", encoding = "UTF-8", skipNul = TRUE)
+nlines.news <- length(news)
+set.seed(1234) ## For reproducibility
+selection.news <- as.logical(rbinom(nlines.news, 1, Sample.Percentage))
+news.subset <- news[selection.news]
+rm(news,selection.news,con.news,nlines.news)
+
+con.blogs <- file("en_US.blogs.txt", open = "rb")
+blogs <- readLines("en_US.blogs.txt", encoding = "UTF-8", skipNul = TRUE)
+nlines.blogs <- length(blogs)
+set.seed(1234) ## For reproducibility
+selection.blogs <- as.logical(rbinom(nlines.blogs, 1, Sample.Percentage))
+blogs.subset <- blogs[selection.blogs]
+rm(blogs,selection.blogs,con.blogs,nlines.blogs)
+
+ 
+##########   Quanteda Approach   #####################
+
+corpus <- corpus(c(twitter.subset,news.subset,blogs.subset))
+tokens_4grams <- tokens(
+count.4grams <- colSums(dfm(  
+  corpus, 
+  what = "word", 
+  remove_numbers = TRUE, 
+  remove_punct = TRUE,
+  remove_symbols = TRUE, 
+  remove_separators = TRUE,
+  remove_twitter = TRUE, 
+  remove_hyphens = TRUE, 
+  remove_url = TRUE,
+  ngrams = 4, 
+  ##skip = 0L, 
+  concatenator = " ",
+  verbose = quanteda_options("verbose")
+  ##include_docvars = TRUE
+)))
+
+
+##############   Next Steps    ########################
+##DONE - Build markov chain that includes top 3 for each ngram 
+##DONE - Maintain frequency of each next word (consider maintianing overall count of ngram for backoff purposes)
+##DONE - Exclude infrequent ngrams (one occurance only at 10% sample)
+###### Should reduce size of 3gram dictionary to ~20% of orignal (10% of ngrams * 1-4 occurences for each)
+## DONE - Implement Backoff Model
+## Create Shiny App
+## For creative this should also a mad libs type approach for the shiny app
+## Future Improvements would be to come up with segment specific dictionaries
+
+
+df.4grams <-  separate(
+  data.frame(
+    token = names(count.4grams), 
+    count = count.4grams
+  )
+  ,token
+  ,c("word1", "word2","word3","word4")
+  , sep = " "
+) 
+#############################
+
+trigram.Totalcount <- df.4grams %>%
+  group_by(word1,word2,word3) %>%
+  summarise(Totalcount = sum(count)) 
+
+trigram.count <- df.4grams %>%
+  filter(count != 1) %>%
+  group_by(word1,word2,word3) %>%
+  rename(sumcount = count)  %>%
+  top_n(n = 3, wt = sumcount) %>%
+  left_join(.,trigram.Totalcount,by = c("word1","word2","word3")) %>%
+  mutate(percent = sumcount/Totalcount) %>%
+  arrange(word1,word2,word3)
+
+bigram.Totalcount <- df.4grams %>%
+  group_by(word2,word3) %>%
+  summarise(Totalcount = sum(count))
+
+bigram.count <- df.4grams %>%
+  ###Corrects count for differences in word 1
+  group_by(word2,word3,word4) %>%
+  summarise(sumcount = sum(count)) %>%
+  ##Repeats Trigram.count function
+  filter(sumcount != 1) %>%
+  group_by(word2,word3) %>%
+  top_n(n = 3, wt = sumcount) %>% 
+  left_join(.,bigram.Totalcount,by = c("word2","word3")) %>%
+  mutate(percent = sumcount/Totalcount) %>%
+  arrange(word2,word3)
+
+
+unigram.Totalcount <- df.4grams %>%
+  group_by(word3) %>%
+  summarise(Totalcount = sum(count))
+
+unigram.count <- df.4grams %>%
+  ###Corrects count for differences in word 1
+  group_by(word3,word4) %>%
+  summarise(sumcount = sum(count)) %>%
+  ##Repeats Trigram.count function
+  filter(sumcount != 1) %>%
+  group_by(word3) %>%
+  top_n(n = 3, wt = sumcount) %>%
+  left_join(.,unigram.Totalcount,by = c("word3")) %>%
+  mutate(percent = sumcount/Totalcount) %>%
+  arrange(word3)
+
+zerongram.estimate <- df.4grams %>%
+  select(-c(word1,word2,word3)) %>%
+  group_by(word4) %>%
+  summarise(sumcount = sum(count)) %>%
+  top_n(n = 3, wt = sumcount) %>% 
+  left_join(.,trigram.Totalcount,by = c("word1","word2","word3")) %>%
+  mutate(percent = sumcount/Totalcount) %>%
+  arrange(word1,word2,word3)
+
+
+trigram.temp <- trigram.count[1:1000,]
+View(trigram.temp)
+bigram.temp <- bigram.count[1:1000,]
+View(bigram.temp)
+unigram.temp <- unigram.count[1:1000,]
+View(unigram.temp)
+# View(zerongram.estimate)
+
+
+rm(df.4grams,trigram.Totalcount,bigram.Totalcount,unigram.Totalcount)
+
+write.table(trigram.count,"trigrams.csv")
+write.table(bigram.count,"bigrams.csv")
+write.table(unigram.count,"unigrams.csv")
+write.table(zerongram.estimate,"zerograms.csv")
